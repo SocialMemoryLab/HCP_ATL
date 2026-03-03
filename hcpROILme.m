@@ -1,0 +1,61 @@
+
+% Script to run ROI x condition x hemisphere mixed effects ANOVA using
+% functional ROIs from TP and PR.
+
+regions = {{'handDrawnLTPThrP6','FacesVsAllOthers'},{'handDrawnRTPThrP6','FacesVsAllOthers'},...
+    {'handDrawnLPRCThrP6','FacesVsAllOthers'},{'handDrawnRPRCThrP6','FacesVsAllOthers'},...
+    {'handDrawnLPRCThrP6','ToolsVsAllOthers'},{'handDrawnRPRCThrP6','ToolsVsAllOthers'}};
+ReplicationDir = '/mnt/sml_share/HCP/derivatives/fpp/ReplicationResults';
+region = [1,1,2,2,3,3]; %TP,PR Face, PR Tools
+hemisphere = [1,2,1,2,1,2]; %left = 1 right =2
+condition= 1:4; % Face, body, tool,place
+pscByRegion = [];
+
+% Load PSC for all regions and conditions
+for i= 1:length(regions)
+    mask = regions{i}{1};
+    contrast = regions{i}{2};
+    if contains(mask,'RTP') || contains(mask,'LTP')
+        ResponseDir = fullfile(ReplicationDir,'TPContrasts');
+    else
+        ResponseDir = fullfile(ReplicationDir,'PRCContrasts');
+    end
+    responseMat = load(fullfile(ResponseDir,['space-fsLR_res-2_den-32k_desc-' mask 'workingmemory' contrast 'Top5PctN415Sm4Replication_roiData.mat']));
+    %extract working memeory data
+    newpscbySub = responseMat.pscBySub(:,7:end);
+    %average across two runs
+    averagepsc = (newpscbySub(:,1:4) + newpscbySub(:,5:end))/2;
+    newSD = std(averagepsc)/sqrt(size(averagepsc,1));
+    pscByRegion = [pscByRegion {averagepsc}];
+end
+
+% Create LME table
+regionID = [];
+conditionID = [];
+subjID = [];
+pscValue = [];
+hemisID = [];
+for r = 1:length(pscByRegion)
+    psc = pscByRegion{r};
+    for cond = condition
+        for subj = 1:size(psc,1)
+            regionID = [regionID;region(r)];
+            conditionID = [conditionID; cond];
+            subjID = [subjID;subj];
+            hemisID = [hemisID;hemisphere(r)];
+            pscValue = [pscValue;psc(subj,cond)];
+        end
+    end
+end
+
+dataTable = table(pscValue, regionID, conditionID,hemisID,subjID, ...
+    'VariableNames', {'y', 'ROI', 'Condition','Hemisphere','Subj'});
+dataTable.ROI = categorical(dataTable.ROI);
+dataTable.Condition = categorical(dataTable.Condition);
+dataTable.Hemisphere = categorical(dataTable.Hemisphere);
+dataTable.Subj = categorical(dataTable.Subj);
+
+% LME analysis
+lmFormula = 'y~ROI*Condition*Hemisphere+(1|Subj)';
+lmeResult = fitlme(dataTable, lmFormula);
+ANOVA = anova(lmeResult);
